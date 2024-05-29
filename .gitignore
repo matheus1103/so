@@ -2,3 +2,12 @@
 \build
 \p1
 .vscode
+\teste.cpp
+\teste2.cpp
+*.exe
+*.out
+*.bin.solucao
+main
+teste
+main.c
+main2.cpp
