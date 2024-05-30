@@ -11,6 +11,28 @@
 #include <string>
 #include <string.h>
 #include <cstring> 
+#include <bitset>
+#define BITS_IN_BYTE 8
+
+
+
+char invertBits(char mapBits, const unsigned char directBlocks[3]) {
+    // Converte o mapBits para uma representação binária de 8 bits
+    std::bitset<BITS_IN_BYTE> bits(mapBits);
+
+    // Para cada valor em directBlocks, se diferente de 0, inverte o bit correspondente
+    for (int i = 0; i < 3; ++i) {
+        if (directBlocks[i] != 0) {
+            int position = directBlocks[i]; // Considera a posição diretamente
+            if (position >= 0 && position < BITS_IN_BYTE) {
+                bits.flip(position);
+            }
+        }
+    }
+
+    // Converte de volta para um char e retorna
+    return static_cast<char>(bits.to_ulong());
+}
 
 std::string getPath(const std::string& path) {
     // Encontrar a última barra
@@ -32,27 +54,17 @@ std::string getPath(const std::string& path) {
     return path.substr(penultimateSlash + 1, lastSlash - penultimateSlash - 1);
 }
 
-std::string getNameFile(const std::string& path) {
-    // Encontrar a última barra
-    size_t lastSlash = path.rfind('/');
-
-    // Caso especial para quando há apenas um diretório
-    if (lastSlash == 0) {
-        return "/";
+std::string getFileName(const std::string& path) {
+    // Encontrar a última ocorrência da barra '/' no caminho
+    size_t pos = path.find_last_of("/\\");
+    if (pos == std::string::npos) {
+        // Se não houver barra, retorna o caminho inteiro
+        return path;
     }
-
-    // Encontrar a penúltima barra
-    size_t penultimateSlash = path.rfind('/', lastSlash - 1);
-    if (penultimateSlash == std::string::npos) {
-        // Somente um diretório no caminho
-        return "/";
-    }
-
-    // Retornar o Ultimo diretório
-    return path.substr(lastSlash + 1, path.size() - lastSlash - 1);
-
-    // return path.substr(penultimateSlash + 1, lastSlash - penultimateSlash - 1);
+    // Retorna a parte do caminho após a última barra
+    return path.substr(pos + 1);
 }
+
 
 int findFirstFreeBlock(unsigned int value) {
     int bitCount = sizeof(value) * 8;  // Total de bits no tipo de 'value' (geralmente 32 bits para um unsigned int)
@@ -214,18 +226,15 @@ void addFile(std::string fsFileName, std::string filePath, std::string fileConte
     File.SIZE = fileContent.size();
 
     //remove o / do nome do arquivo e escreve no inode
-    filePath.erase(0, 1);
+    // filePath.erase(0, 1);
 
-    if (filePath.size() <= 10){
-        for (int i(0); i < filePath.size(); i++){
-            File.NAME[i] = filePath[i];
-        }
-    }
+    std::string fileName = getFileName(filePath);
+    strcpy(File.NAME, fileName.c_str());
 
     // atualiza o inode com os blocos que o fileContent está
     int blockIndex = 0;
-    
-    for (freeBlock; freeBlock <= quantityBlocks; freeBlock++){
+    int aux = freeBlock;
+    for (freeBlock; freeBlock < quantityBlocks + aux; freeBlock++){
         File.DIRECT_BLOCKS[blockIndex] = freeBlock;
         blockIndex++;
     }
@@ -236,7 +245,10 @@ void addFile(std::string fsFileName, std::string filePath, std::string fileConte
 
     //atualiza o mapa de bits
     file.seekg(3);
-    *mapBits = calculateNewBitMap(*mapBits, quantityBlocks);
+    // *mapBits = calculateNewBitMap(*mapBits, quantityBlocks);
+
+    *mapBits = invertBits(*mapBits, File.DIRECT_BLOCKS);
+
     file.write(mapBits, mapBitSize * sizeof(char));
 
 
@@ -326,12 +338,8 @@ void addDir(std::string fsFileName, std::string dirPath){
 
     //remove o / do nome do arquivo e escreve no inode
     dirPath.erase(0, 1);
+    strcpy(Directory.NAME , dirPath.c_str());
 
-    if (dirPath.size() <= 10){
-        for (int i(0); i < dirPath.size(); i++){
-            Directory.NAME[i] = dirPath[i];
-        }
-    }
     int freeBlock = findFirstFreeBlock(*mapBits);
 
     Directory.DIRECT_BLOCKS[0] = freeBlock;
@@ -361,8 +369,8 @@ void addDir(std::string fsFileName, std::string dirPath){
 void remove(std::string fsFileName, std::string path){
     std::fstream file(fsFileName, std::ios::in | std::ios::out | std::ios::binary);
     
-    INODE inodes{};
-    INODE Directory{};
+    INODE File{};
+    INODE RelativePath{};
 
     int blockSize = 0x00;
     int numBlocks = 0x00;
@@ -376,31 +384,114 @@ void remove(std::string fsFileName, std::string path){
     int mapBitSize = std::ceil(numBlocks/8.0);
     char *mapBits = new char[mapBitSize]{};
     char fileNameInode[10]{};
+    char diretorioPai[10]{};
 
     file.read(mapBits, mapBitSize * sizeof(char));
 
-    std::string fileName = getNameFile(path);
+    //
+    std::string fileName = getFileName(path);
     strcpy(fileNameInode, fileName.c_str());
 
     int fileIdex {0};
 
     // remove o is_used do inode
     for (; fileIdex < numInodes; fileIdex++){
-        if(file.read((char*) &inodes, sizeof(INODE))){
-            int result = std::strcmp(fileNameInode, inodes.NAME);
+        if(file.read((char*) &File, sizeof(INODE))){
+            int result = std::strcmp(fileNameInode, File.NAME);
             if( result == 0){
-                inodes.IS_USED += 0x00;
+                File.IS_USED += 0x00;
                 file.seekg(1 + fileIdex * sizeof(INODE));
-                file.write((char*) &inodes.IS_USED, sizeof(char));
                 break;
             }
         }
     }
     // achar o inode do pai
-    // decrementar o tamanho
-    // ir para o mapbit do pai
-    // procurar o bit com o numero do inode a ser deletado
-    // rotacionar
+
+    std::string dir = getPath(path);
+    strcpy(diretorioPai, dir.c_str());
+
+    int indicePai {0};
+    file.seekg(4);
+    // escreve o inode do diretório pai
+    for (; indicePai < numInodes; indicePai++){
+        if(file.read((char*) &RelativePath, sizeof(INODE))){
+            int result = std::strcmp(diretorioPai, RelativePath.NAME);
+            if( result == 0){
+                RelativePath.SIZE -= 0x01;
+                file.seekg(16 + indicePai * sizeof(INODE));
+                file.write((char*) &RelativePath.SIZE, sizeof(char));
+                break;
+            }
+        }
+    }
+    // procurar o bloco do pai e procurar o indice do inode a ser deletado
+    for (int i(0); i < (sizeof(RelativePath.DIRECT_BLOCKS) / sizeof(RelativePath.DIRECT_BLOCKS[0])); i++){
+        bool isFind = false;
+        file.seekg(5 + numInodes * sizeof(INODE) + RelativePath.DIRECT_BLOCKS[i] * blockSize);
+        for (int j(0); j < blockSize; j++){
+            char content, aux;
+            if (file.read((char*) &content, sizeof(char))){
+                if(content == fileIdex) {
+                    if (j == 0) {
+                        // pega o da direita e joga aqui
+                        file.seekg(5 + numInodes * sizeof(INODE) + RelativePath.DIRECT_BLOCKS[i] * blockSize + j+1);
+                        file.read((char*) &aux, sizeof(char));
+                        if(aux == 0x00){
+                            break;
+                        }
+                        file.seekg(5 + numInodes * sizeof(INODE) + RelativePath.DIRECT_BLOCKS[i] * blockSize + j);
+                        file.write((char*) &aux, sizeof(char));
+
+                        break;
+                    }
+                    // pega o da esquerda e joga aqui
+                    // file.seekg(5 + numInodes * sizeof(INODE) + RelativePath.DIRECT_BLOCKS[i] * blockSize + j-1);
+                    // file.read((char*) &aux, sizeof(char));
+                    // file.seekg(5 + numInodes * sizeof(INODE) + RelativePath.DIRECT_BLOCKS[i] * blockSize + j);
+                    // file.write((char*) &aux, sizeof(char));                    
+                    isFind = true;
+                    break;
+                }
+            }
+        }
+        if (isFind){
+            break;
+        }
+    }
+
+
+    int bitCount = sizeof(mapBits) * 8;  // Total de bits no tipo de 'value' (geralmente 32 bits para um unsigned int)
+
+
+    //!! PROBLEMA AQUI
+
+    *mapBits = invertBits(*mapBits, File.DIRECT_BLOCKS);
+
+    // int passador = (sizeof(File.DIRECT_BLOCKS) / sizeof(File.DIRECT_BLOCKS[0]));
+    // for (int i(0); i < passador; i++){
+    //     if (File.DIRECT_BLOCKS[i] == 0x00){
+    //         break;
+    //     }
+    //     file.seekg(5 + numInodes * sizeof(INODE) + File.DIRECT_BLOCKS[i] * blockSize);
+    //     char content;
+    //     if (file.read((char*) &content, sizeof(char))){
+    //         if(content != 0x00){
+    //             mapBits[i] = 0x00;
+    //         }
+    //     }
+    // }
+    File = {};
+    file.seekg(4 + fileIdex * sizeof(INODE));
+    file.write((char*) &File, sizeof(INODE));	
+    file.seekg(3);
+    file.write(mapBits, mapBitSize * sizeof(char));
+    // file.seekg(1);
+    // char a(0x00);
+
+    // file.write((char*) &a, sizeof(char));
+    // // ir para o mapbit do pai
+    // // procurar o bit com o numero do inode a ser deletado
+    // // rotacionar
 
     file.close();
 
@@ -412,5 +503,7 @@ void remove(std::string fsFileName, std::string path){
  * @param oldPath caminho completo do arquivo ou diretório a ser movido.
  * @param newPath novo caminho completo do arquivo ou diretório.
  */
-void move(std::string fsFileName, std::string oldPath, std::string newPath){}
+void move(std::string fsFileName, std::string oldPath, std::string newPath){
+    
+}
 
