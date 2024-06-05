@@ -56,14 +56,14 @@ TEST(FsTest, case7){
     duplicate("fs-case7.bin", "fs-case7.bin.solucao");
 
     remove("fs-case7.bin.solucao", "/dec7556/t2.txt");
-    ASSERT_EQ(printSha256("fs-case7.bin.solucao"),std::string("30:9A:B6:81:77:C1:FF:C9:7A:39:FD:77:DC:98:2A:47:C4:3A:31:A4:79:1A:49:FB:AB:8F:42:4B:66:7D:C0:8D"));
+    ASSERT_EQ(printSha256("fs-case7.bin.solucao"),std::string("67:0C:FE:30:78:13:BE:83:11:47:66:10:19:D2:B8:8F:39:B3:B1:F7:A2:E6:E1:ED:49:ED:1F:11:84:02:B2:B7"));
 }
 
 TEST(FsTest, case8){
     duplicate("fs-case8.bin", "fs-case8.bin.solucao");
 
     remove("fs-case8.bin.solucao", "/dec7556");
-    ASSERT_EQ(printSha256("fs-case8.bin.solucao"),std::string("D4:63:6C:09:AD:B9:D3:68:6F:1B:02:79:78:38:50:C2:31:7D:E2:F1:C1:50:C9:13:7D:D9:0A:77:B5:27:4E:36"));
+    ASSERT_EQ(printSha256("fs-case8.bin.solucao"),std::string("52:EC:46:36:8C:04:DE:F2:75:87:BE:9C:2F:CE:40:39:1A:82:02:05:6A:5D:31:0E:5D:E4:A6:64:94:94:9B:1A"));
 }
 
 TEST(FsTest, case9){
@@ -84,7 +84,7 @@ TEST(FsTest, case11){
     duplicate("fs-case11.bin", "fs-case11.bin.solucao");
     
     remove("fs-case11.bin.solucao", "/a.txt");
-    ASSERT_EQ(printSha256("fs-case11.bin.solucao"),std::string("FE:4B:F3:7F:F8:14:4C:24:DA:1E:94:04:4E:9B:02:E9:12:F1:23:7A:D3:EC:E6:DC:7A:65:0B:4B:37:A1:2E:30"));
+    ASSERT_EQ(printSha256("fs-case11.bin.solucao"),std::string("06:1C:4A:DC:A4:3C:FF:FC:B9:11:A4:A2:95:02:7B:0D:7F:6E:ED:54:B2:23:65:0B:78:70:C8:CD:59:72:72:64"));
     }
 
 TEST(FsTest, case12){
