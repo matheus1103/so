@@ -226,9 +226,7 @@ void addFile(std::string fsFileName, std::string filePath, std::string fileConte
             int result = std::strcmp(diretorioPai, inodes.NAME);
             if (result == 0)
             {
-                inodes.SIZE += 0x01;
                 file.seekg(16 + indicePai * sizeof(INODE));
-                file.write((char *)&inodes.SIZE, sizeof(char));
                 break;
             }
         }
@@ -257,7 +255,7 @@ void addFile(std::string fsFileName, std::string filePath, std::string fileConte
             char aux;
             if (file.read((char *)&aux, sizeof(char)))
             {
-                if (aux == 0x00)
+                if (aux == 0x00 || inodes.SIZE == 0x00)
                 {
                     file.seekg(5 + numInodes * sizeof(INODE) + inodes.DIRECT_BLOCKS[i] * blockSize + j);
                     file.write((char *)&indiceNovoInode, sizeof(char));
@@ -281,6 +279,7 @@ void addFile(std::string fsFileName, std::string filePath, std::string fileConte
             *mapBits = invertBits(*mapBits, &inodes.DIRECT_BLOCKS[1]);
         }
     }
+    inodes.SIZE += 0x01;
     file.seekg(4 + indicePai * sizeof(INODE));
     file.write((char *)&inodes, sizeof(INODE));
 
@@ -481,9 +480,10 @@ void remove(std::string fsFileName, std::string path)
             }
         }
     }
+    bool isFound = false;
+    int posicaoParaMudar;
     for (int i = 0; i < (sizeof(RelativePath.DIRECT_BLOCKS) / sizeof(RelativePath.DIRECT_BLOCKS[0])); ++i)
     {
-        bool isFound = false;
         int blockStart = 5 + numInodes * sizeof(INODE) + RelativePath.DIRECT_BLOCKS[i] * blockSize;
         file.seekg(blockStart);
 
@@ -507,17 +507,23 @@ void remove(std::string fsFileName, std::string path)
 
                         file.seekg(blockStart + j);
                         file.write(&aux, sizeof(char));
+                        isFound = true;
+                        posicaoParaMudar = j+1;
+                        
                     }
 
-                    isFound = true;
+                } else if (isFound && RelativePath.DIRECT_BLOCKS[i] > 0)
+                {
+
+                    file.seekg(5 + numInodes * sizeof(INODE) + RelativePath.DIRECT_BLOCKS[i - 1] * blockSize + posicaoParaMudar);
+                    file.write(&content, sizeof(char));
+                    *mapBits = invertBits(*mapBits, &RelativePath.DIRECT_BLOCKS[i]);
+                    RelativePath.DIRECT_BLOCKS[i] = 0x00;
+                    file.seekg(4 + indicePai * sizeof(INODE));
+                    file.write((char *)&RelativePath, sizeof(INODE));
                     break;
                 }
             }
-        }
-
-        if (isFound)
-        {
-            break;
         }
     }
 
