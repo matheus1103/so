@@ -12,9 +12,10 @@
 #include <string.h>
 #include <cstring>
 #include <bitset>
+#include <memory>
 #define BITS_IN_BYTE 8
 
-
+// Inverte os bits do mapa de bits
 char invertBits(char mapBits, const unsigned char directBlocks[3])
 {
     // Converte o mapBits para uma representação binária de 8 bits
@@ -37,6 +38,7 @@ char invertBits(char mapBits, const unsigned char directBlocks[3])
     return static_cast<char>(bits.to_ulong());
 }
 
+// extrai o nome do diretório do caminho
 std::string getPath(const std::string &path)
 {
     // Encontrar a última barra
@@ -60,6 +62,7 @@ std::string getPath(const std::string &path)
     return path.substr(penultimateSlash + 1, lastSlash - penultimateSlash - 1);
 }
 
+// extrai o nome do arquivo do caminho
 std::string getFileName(const std::string &path)
 {
     // Encontrar a última ocorrência da barra '/' no caminho
@@ -73,6 +76,7 @@ std::string getFileName(const std::string &path)
     return path.substr(pos + 1);
 }
 
+// Encontra o primeiro bloco livre no mapa de bits
 int findFirstFreeBlock(unsigned int value)
 {
     int bitCount = sizeof(value) * 8; // Total de bits no tipo de 'value' (geralmente 32 bits para um unsigned int)
@@ -88,30 +92,6 @@ int findFirstFreeBlock(unsigned int value)
     return -1;
 }
 
-char balanceBlocks(INODE &inode, char mapBits, int blockSize, int numInodes, std::fstream &file)
-{
-    int aux = 0x00;
-    bool maisDeUmBloco = false;
-    char sub;
-    for (int i = 0; i < 3; i++)
-    {
-       for (int j = 0; j < blockSize; j++)
-       {    
-           if (inode.DIRECT_BLOCKS[i] != aux)
-           {
-               aux = inode.DIRECT_BLOCKS[i];
-           } else {
-                file.seekg(5 + numInodes * sizeof(INODE) + inode.DIRECT_BLOCKS[i] * blockSize + j);
-                file.read((char *)&sub, sizeof(char));
-           }
-           if (i > 0 && inode.DIRECT_BLOCKS[i] != 0x00){
-                maisDeUmBloco = true;
-
-           }
-       }
-    }
-    return 0x00;
-}
 
 void initFs(std::string fsFileName, int blockSize, int numBlocks, int numInodes)
 {
@@ -135,6 +115,7 @@ void initFs(std::string fsFileName, int blockSize, int numBlocks, int numInodes)
 
     char a(0x00);
 
+    // Inicializa os inodes e blocos com 0
     for (int i(1); i < numInodes; i++)
     {
         for (int j(0); j < sizeof(INODE); j++)
@@ -142,7 +123,7 @@ void initFs(std::string fsFileName, int blockSize, int numBlocks, int numInodes)
             file.write((char *)&a, sizeof(char));
         }
     }
-
+    // Inicializa os blocos com 0
     file.write((char *)&a, sizeof(char));
     for (int i(0); i < numBlocks; i++)
     {
@@ -151,7 +132,11 @@ void initFs(std::string fsFileName, int blockSize, int numBlocks, int numInodes)
             file.write((char *)&a, sizeof(char));
         }
     }
-
+    
+    //limpar mapa de bits para evitar vazamento de memoria
+    delete[] mapBits;
+    mapBits = nullptr;
+    
     file.close();
 }
 
@@ -165,7 +150,7 @@ void addFile(std::string fsFileName, std::string filePath, std::string fileConte
 {
     std::fstream file(fsFileName, std::ios::in | std::ios::out | std::ios::binary);
     file.seekg(0);
-    INODE inodes{};
+    INODE Directory{};
     INODE File{};
 
     int blockSize = 0x00;
@@ -185,6 +170,7 @@ void addFile(std::string fsFileName, std::string filePath, std::string fileConte
 
     file.read(mapBits, mapBitSize * sizeof(char));
 
+    // extrai o nome do diretório pai
     std::string dir = getPath(filePath);
     strcpy(diretorioPai, dir.c_str());
 
@@ -201,6 +187,7 @@ void addFile(std::string fsFileName, std::string filePath, std::string fileConte
         file.write((char *)&fileContent[i], sizeof(char));
     }
 
+    // escreve o inode do arquivo
     File.IS_USED = 0x01;
     File.IS_DIR = 0x00;
     File.SIZE = fileContent.size();
@@ -221,9 +208,9 @@ void addFile(std::string fsFileName, std::string filePath, std::string fileConte
     // escreve o inode do diretório pai
     for (; indicePai < numInodes; indicePai++)
     {
-        if (file.read((char *)&inodes, sizeof(INODE)))
+        if (file.read((char *)&Directory, sizeof(INODE)))
         {
-            int result = std::strcmp(diretorioPai, inodes.NAME);
+            int result = std::strcmp(diretorioPai, Directory.NAME);
             if (result == 0)
             {
                 file.seekg(16 + indicePai * sizeof(INODE));
@@ -232,32 +219,34 @@ void addFile(std::string fsFileName, std::string filePath, std::string fileConte
         }
     }
 
+    // achar o primeiro inode livre e escrever o INODE
+    
     file.seekg(4);
     for (; indiceNovoInode < numInodes; indiceNovoInode++)
     {
-        if (file.read((char *)&inodes, sizeof(INODE)))
+        if (file.read((char *)&Directory, sizeof(INODE)))
         {
-            if (inodes.IS_USED == 0x00)
+            if (Directory.IS_USED == 0x00)
             {
                 break;
             }
         }
     }
     file.seekg(4 + indicePai * sizeof(INODE));
-    file.read((char *)&inodes, sizeof(INODE));
+    file.read((char *)&Directory, sizeof(INODE));
 
     bool isFind = false;
-    for (int i(0); i < (sizeof(inodes.DIRECT_BLOCKS) / sizeof(inodes.DIRECT_BLOCKS[0])); i++)
+    for (int i(0); i < (sizeof(Directory.DIRECT_BLOCKS) / sizeof(Directory.DIRECT_BLOCKS[0])); i++)
     {
-        file.seekg(5 + numInodes * sizeof(INODE) + inodes.DIRECT_BLOCKS[i] * blockSize);
+        file.seekg(5 + numInodes * sizeof(INODE) + Directory.DIRECT_BLOCKS[i] * blockSize);
         for (int j(0); j < blockSize; j++)
         {
             char aux;
             if (file.read((char *)&aux, sizeof(char)))
             {
-                if (aux == 0x00 || inodes.SIZE == 0x00)
+                if (aux == 0x00 || Directory.SIZE == 0x00)
                 {
-                    file.seekg(5 + numInodes * sizeof(INODE) + inodes.DIRECT_BLOCKS[i] * blockSize + j);
+                    file.seekg(5 + numInodes * sizeof(INODE) + Directory.DIRECT_BLOCKS[i] * blockSize + j);
                     file.write((char *)&indiceNovoInode, sizeof(char));
                     isFind = true;
                     break;
@@ -271,17 +260,17 @@ void addFile(std::string fsFileName, std::string filePath, std::string fileConte
     }
     if (!isFind)
     {
-        if (inodes.DIRECT_BLOCKS[1] == 0x00)
+        if (Directory.DIRECT_BLOCKS[1] == 0x00)
         {
-            inodes.DIRECT_BLOCKS[1] = freeBlock;
-            file.seekg(5 + numInodes * sizeof(INODE) + inodes.DIRECT_BLOCKS[1] * blockSize);
+            Directory.DIRECT_BLOCKS[1] = freeBlock;
+            file.seekg(5 + numInodes * sizeof(INODE) + Directory.DIRECT_BLOCKS[1] * blockSize);
             file.write((char *)&indiceNovoInode, sizeof(char));
-            *mapBits = invertBits(*mapBits, &inodes.DIRECT_BLOCKS[1]);
+            *mapBits = invertBits(*mapBits, &Directory.DIRECT_BLOCKS[1]);
         }
     }
-    inodes.SIZE += 0x01;
+    Directory.SIZE += 0x01;
     file.seekg(4 + indicePai * sizeof(INODE));
-    file.write((char *)&inodes, sizeof(INODE));
+    file.write((char *)&Directory, sizeof(INODE));
 
     file.seekg(4 + indiceNovoInode * sizeof(INODE));
     file.write((char *)&File, sizeof(INODE));
@@ -292,7 +281,11 @@ void addFile(std::string fsFileName, std::string filePath, std::string fileConte
     *mapBits = invertBits(*mapBits, File.DIRECT_BLOCKS);
 
     file.write(mapBits, mapBitSize * sizeof(char));
-
+    
+    //limpar mapa de bits para evitar vazamento de memoria
+    delete[] mapBits;
+    mapBits = nullptr;
+    
     file.close();
 }
 
@@ -406,7 +399,11 @@ void addDir(std::string fsFileName, std::string dirPath)
     file.seekg(3);
     *mapBits = invertBits(*mapBits, Directory.DIRECT_BLOCKS);
     file.write(mapBits, mapBitSize * sizeof(char));
-
+    
+    //limpar mapa de bits para evitar vazamento de memoria
+    delete[] mapBits;
+    mapBits = nullptr;
+    
     file.close();
 }
 
@@ -527,27 +524,17 @@ void remove(std::string fsFileName, std::string path)
         }
     }
 
-    balanceBlocks(RelativePath, *mapBits, blockSize, numInodes, file);
     *mapBits = invertBits(*mapBits, File.DIRECT_BLOCKS);
 
-    // int passador = (sizeof(File.DIRECT_BLOCKS) / sizeof(File.DIRECT_BLOCKS[0]));
-    // for (int i(0); i < passador; i++){
-    //     if (File.DIRECT_BLOCKS[i] == 0x00){
-    //         break;
-    //     }
-    //     file.seekg(5 + numInodes * sizeof(INODE) + File.DIRECT_BLOCKS[i] * blockSize);
-    //     char content;
-    //     if (file.read((char*) &content, sizeof(char))){
-    //         if(content != 0x00){
-    //             mapBits[i] = 0x00;
-    //         }
-    //     }
-    // }
     file.seekg(4 + fileIdex * sizeof(INODE));
     file.write((char *)&File, sizeof(INODE));
     file.seekg(3);
     file.write(mapBits, mapBitSize * sizeof(char));
-
+    
+    //limpar mapa de bits para evitar vazamento de memoria
+    delete[] mapBits;
+    mapBits = nullptr;
+    
     file.close();
 }
 
@@ -557,9 +544,12 @@ void remove(std::string fsFileName, std::string path)
  * @param oldPath caminho completo do arquivo ou diretório a ser movido.
  * @param newPath novo caminho completo do arquivo ou diretório.
  */
-void move(std::string fsFileName, std::string oldPath, std::string newPath)
-{
+void move(std::string fsFileName, std::string oldPath, std::string newPath) {
     std::fstream file(fsFileName, std::ios::in | std::ios::out | std::ios::binary);
+    if (!file) {
+        std::cerr << "Error: Could not open file." << std::endl;
+        return;
+    }
 
     INODE File{};
     INODE inodes{};
@@ -567,19 +557,18 @@ void move(std::string fsFileName, std::string oldPath, std::string newPath)
     int blockSize = 0x00;
     int numBlocks = 0x00;
     int numInodes = 0x00;
-    int sizePai = 0x00;
 
-    file.read((char *)&blockSize, sizeof(char));
-    file.read((char *)&numBlocks, sizeof(char));
-    file.read((char *)&numInodes, sizeof(char));
+    file.read(reinterpret_cast<char*>(&blockSize), sizeof(char));
+    file.read(reinterpret_cast<char*>(&numBlocks), sizeof(char));
+    file.read(reinterpret_cast<char*>(&numInodes), sizeof(char));
 
     int mapBitSize = std::ceil(numBlocks / 8.0);
-    char *mapBits = new char[mapBitSize]{};
+    std::unique_ptr<char[]> mapBits(new char[mapBitSize]{});
     char fileNameInode[10]{};
     char novoDiretorioPai[10]{};
     char antigoDiretorioPai[10]{};
 
-    file.read(mapBits, mapBitSize * sizeof(char));
+    file.read(mapBits.get(), mapBitSize * sizeof(char));
 
     // NOVO PATH
     std::string novoDir = getPath(newPath);
@@ -596,135 +585,49 @@ void move(std::string fsFileName, std::string oldPath, std::string newPath)
 
     // CASO MUDANÇA DE NOME
     int fileIdex{0};
-    // int fileIdex {0};
     std::string newFileName = getFileName(newPath);
-    // acha o indice odo inode a ser movido
+
+    // Acha o indice do inode a ser movido
     file.seekg(4);
-    for (; fileIdex < numInodes; fileIdex++)
-    {
-        if (file.read((char *)&File, sizeof(INODE)))
-        {
+    for (; fileIdex < numInodes; fileIdex++) {
+        if (file.read(reinterpret_cast<char*>(&File), sizeof(INODE))) {
             int result = std::strcmp(fileNameInode, File.NAME);
-            if (result == 0)
-            {
+            if (result == 0) {
                 strcpy(File.NAME, newFileName.c_str());
-                file.seekg(4 + fileIdex * sizeof(INODE));
-                file.write((char *)&File, sizeof(INODE));
+                file.seekp(4 + fileIdex * sizeof(INODE));
+                file.write(reinterpret_cast<char*>(&File), sizeof(INODE));
                 break;
             }
         }
     }
-    if (novoDir == antigoDir)
-    {
+    
+    if (novoDir == antigoDir) {
         strcpy(File.NAME, newFileName.c_str());
-
-        file.seekg(4 + fileIdex * sizeof(INODE));
-        file.write((char *)&File, sizeof(INODE));
+        file.seekp(4 + fileIdex * sizeof(INODE));
+        file.write(reinterpret_cast<char*>(&File), sizeof(INODE));
         return;
     }
 
-    // ler conteudo do fileName
+    // Ler conteudo do fileName
     std::string fileContent;
-    for (int i(0); i < (sizeof(File.DIRECT_BLOCKS) / sizeof(File.DIRECT_BLOCKS[0])); i++)
-    {
-        if (File.DIRECT_BLOCKS[i] == 0x00)
-        {
+    for (int i = 0; i < (sizeof(File.DIRECT_BLOCKS) / sizeof(File.DIRECT_BLOCKS[0])); i++) {
+        if (File.DIRECT_BLOCKS[i] == 0x00) {
             break;
         }
         file.seekg(5 + numInodes * sizeof(INODE) + File.DIRECT_BLOCKS[i] * blockSize);
-        for (int j(0); j < blockSize; j++)
-        {
+        for (int j = 0; j < blockSize; j++) {
             char content;
-            if (file.read((char *)&content, sizeof(char)))
-            {
-                if (content != 0x00)
-                {
+            if (file.read(&content, sizeof(char))) {
+                if (content != 0x00) {
                     fileContent += content;
                 }
             }
         }
     }
+
     file.close();
+    
+    // Movimentar o arquivo
     remove(fsFileName, oldPath);
     addFile(fsFileName, newPath, fileContent);
-    // // acha o indice odo inode a ser movido
-    // file.seekg(4);
-    // for (; fileIdex < numInodes; fileIdex++){
-    //     if(file.read((char*) &File, sizeof(INODE))){
-    //         int result = std::strcmp(fileNameInode, File.NAME);
-    //         if( result == 0){
-    //             file.seekg(1 + fileIdex * sizeof(INODE));
-    //             break;
-    //         }
-    //     }
-    // }
-    // int freeBlock = findFirstFreeBlock(*mapBits);
-    // file.seekg(4);
-
-    // // escreve o inode do diretório pai
-
-    // for (; indicePai < numInodes; indicePai++){
-    //     if(file.read((char*) &inodes, sizeof(INODE))){
-    //         int result = std::strcmp(novoDiretorioPai, inodes.NAME);
-    //         if( result == 0){
-    //             for (int i(0); i < (sizeof(inodes.DIRECT_BLOCKS) / sizeof(inodes.DIRECT_BLOCKS[0])); i++){
-    //                 bool isFind = false;
-    //                 file.seekg(5 + numInodes * sizeof(INODE) + inodes.DIRECT_BLOCKS[i] * blockSize);
-    //                 for (int j(0); j < blockSize; j++){
-    //                     char aux;
-    //                     if (file.read((char*) &aux, sizeof(char))){
-    //                         if(aux == 0x00){
-    //                             file.seekg(5 + numInodes * sizeof(INODE) + inodes.DIRECT_BLOCKS[i] * blockSize + j);
-    //                             file.write((char*) &fileIdex, sizeof(char));
-    //                             isFind = true;
-    //                             break;
-    //                         }
-    //                     }
-    //                 }
-    //                 if (isFind){
-    //                     break;
-    //                 }
-    //             }
-
-    //             if(inodes.SIZE > 0x00 && inodes.DIRECT_BLOCKS[0] == 0x00 && (inodes.DIRECT_BLOCKS[1] == 0x00 || inodes.DIRECT_BLOCKS[2] == 0x00)){
-    //                     if(inodes.DIRECT_BLOCKS[1] == 0x00){
-    //                         inodes.DIRECT_BLOCKS[1] = freeBlock;
-    //                         file.seekg(5 + numInodes * sizeof(INODE) + inodes.DIRECT_BLOCKS[1] * blockSize);
-    //                         file.write((char*) &fileIdex, sizeof(char));
-    //                     } else {
-    //                         inodes.DIRECT_BLOCKS[2] = freeBlock;
-    //                         file.seekg(5 + numInodes * sizeof(INODE) + inodes.DIRECT_BLOCKS[2] * blockSize);
-    //                         file.write((char*) &fileIdex, sizeof(char));
-    //                 }
-    //             }
-    //             inodes.SIZE += 0x01;
-
-    //             file.seekg(4 + indicePai * sizeof(INODE));
-    //             file.write((char*) &inodes, sizeof(INODE));
-    //             break;
-    //         }
-    //     }
-    // }
-
-    // *mapBits = invertBits(*mapBits, inodes.DIRECT_BLOCKS);
-    // file.seekg(3);
-    // file.write(mapBits, mapBitSize * sizeof(char));
-
-    // int indicePai2 {0};
-
-    // file.seekg(4);
-
-    // for (; indicePai2 < numInodes; indicePai2++){
-    //     if(file.read((char*) &inodes, sizeof(INODE))){
-    //         int result = std::strcmp(antigoDiretorioPai, inodes.NAME);
-    //         if( result == 0){
-    //             inodes.SIZE -= 0x01;
-    //             file.seekg(16 + indicePai2 * sizeof(INODE));
-    //             file.write((char*) &inodes.SIZE, sizeof(char));
-    //             break;
-    //         }
-    //     }
-    // }
-
-    // file.close();
 }
